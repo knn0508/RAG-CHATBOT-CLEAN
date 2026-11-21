@@ -31,7 +31,7 @@ const Register = () => {
       errors.confirmPassword = 'Şifrələr uyğun gəlmir';
     }
 
-    if (formData.email && !/^[\w\.-]+@[\w\.-]+\.\w+$/.test(formData.email)) {
+    if (formData.email && !/^[\w.-]+@[\w.-]+\.\w+$/.test(formData.email)) {
       errors.email = 'Email formatı yanlışdır';
     }
 

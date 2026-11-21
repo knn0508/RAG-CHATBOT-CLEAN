@@ -508,7 +508,7 @@ export const templateUtils = {
   parseDownloadLinks: (text) => {
     const patterns = [
       // Markdown links: [text](url)
-      /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,
+      /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
       // Direct URLs with context
       /📥[^:]*:[\s]*(https?:\/\/[^\s\n]+)/gi,
       // Bold download links

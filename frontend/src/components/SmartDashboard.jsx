@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../stores/authStore';
-import { documentService, chatService } from '../services/api';
+import { chatService } from '../services/api';
 import toast from 'react-hot-toast';
 import ReactMarkdown from 'react-markdown';
 
@@ -58,7 +58,7 @@ const SmartDashboard = () => {
   const parseDownloadLinks = (text) => {
     const patterns = [
       // Pattern 1: [Link Text](URL)
-      /\[([^\]]+)\]\((http[s]?:\/\/[^\)]+)\)/g,
+      /\[([^\]]+)\]\((http[s]?:\/\/[^)]+)\)/g,
       // Pattern 2: **Yükləmə linki:** URL
       /\*\*[^*]*yükləmə[^*]*linki[^*]*\*\*[:\s]*([http][^\s\n]+)/gi,
       // Pattern 3: 📥 **Yükləmə linki:** URL  

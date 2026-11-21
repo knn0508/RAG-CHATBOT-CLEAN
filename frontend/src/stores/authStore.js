@@ -41,7 +41,7 @@ function getInitialAuthState() {
 
 const initialAuth = getInitialAuthState();
 
-const useAuthStore = create((set, get) => ({
+const useAuthStore = create((set) => ({
   user: initialAuth.user,
   isAuthenticated: initialAuth.isAuthenticated,
   isLoading: false,

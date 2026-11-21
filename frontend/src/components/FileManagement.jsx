@@ -209,7 +209,7 @@ const FileManagement = () => {
 
     setIsLoading(true);
     try {
-      const result = await documentService.uploadDocument(
+      await documentService.uploadDocument(
         uploadData.file,
         uploadData.documentType,
         uploadData.isTemplate

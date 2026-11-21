@@ -110,9 +110,6 @@ const Login = () => {
                 Qeydiyyatdan keçin
               </Link>
             </p>
-            <p className="text-blue-300 text-xs mt-2">
-              Demo: admin / admin123
-            </p>
           </div>
         </div>
       </div>
