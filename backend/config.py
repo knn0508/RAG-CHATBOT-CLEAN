@@ -62,6 +62,8 @@ class Config:
 
     def _secret(self, name: str, fallback: str = "") -> str:
         value = os.getenv(name) or fallback
+        if value and value.startswith("change-me") and self.IS_PRODUCTION:
+            raise RuntimeError(f"{name} still has the placeholder value from .env.example; set a real secret")
         if value:
             return value
         if self.IS_PRODUCTION:

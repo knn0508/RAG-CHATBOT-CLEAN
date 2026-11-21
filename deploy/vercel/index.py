@@ -4,7 +4,7 @@ import os
 import traceback
 
 # Add backend directory to Python path
-backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
+backend_path = os.path.join(os.path.dirname(__file__), '..', '..', 'backend')
 sys.path.insert(0, os.path.abspath(backend_path))
 
 # Set production environment
@@ -14,9 +14,8 @@ os.environ.setdefault('VERCEL', '1')
 startup_error_detail = None
 
 try:
-    from simple_app import create_simple_app
-    app, db_manager, rag_service, chat_service = create_simple_app()
-    print("APP STARTED SUCCESSFULLY")
+    from app import create_app
+    app = create_app()
 except Exception as e:
     # If the main app fails to load, create a minimal Flask app that returns the error
     from flask import Flask, jsonify, request

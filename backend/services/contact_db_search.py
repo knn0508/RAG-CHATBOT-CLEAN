@@ -7,12 +7,15 @@ import os
 import re
 import sqlite3
 
+from config import get_config
+
 
 def enhance_rag_with_contact_search(rag_service_instance):
     """Wrap the RAG service to handle contact queries via contacts.db"""
     original = rag_service_instance.answer_question
     # Find the contacts.db file - check multiple possible locations
     possible_paths = [
+        get_config().CONTACTS_DB_FILE,  # CONTACTS_DB_FILE env var (default: contacts.db)
         '/tmp/contacts.db',  # Vercel Lambda (restored from Blob Storage on startup)
         os.path.join(os.path.dirname(__file__), '..', 'contacts.db'),  # backend/contacts.db (local)
         os.path.join(os.path.dirname(os.getcwd()), 'contacts.db'),  # Parent directory

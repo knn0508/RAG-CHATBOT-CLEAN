@@ -96,6 +96,7 @@ def create_app(test_config: dict = None, rag_overrides: dict = None) -> Flask:
     # Filesystem sessions locally; plain signed-cookie sessions + JWT on Vercel.
     if not config.IS_VERCEL:
         app.config.setdefault("SESSION_TYPE", "filesystem")
+        app.config.setdefault("SESSION_FILE_DIR", os.getenv("SESSION_FILE_DIR", "flask_session"))
         Session(app)
 
     origins = list(config.CORS_ORIGINS)

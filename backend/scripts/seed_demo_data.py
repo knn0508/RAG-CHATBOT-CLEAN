@@ -14,7 +14,7 @@ import sqlite3
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
-EXAMPLE_DOCS = BACKEND_DIR.parent / "example_docs"
+EXAMPLE_DOCS = Path(os.getenv("EXAMPLE_DOCS_DIR", BACKEND_DIR.parent / "example_docs"))
 CONTACTS_DB = Path(os.getenv("CONTACTS_DB_FILE", BACKEND_DIR / "contacts.db"))
 
 DEPARTMENTS = [
