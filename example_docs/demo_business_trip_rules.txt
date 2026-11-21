@@ -1,0 +1,14 @@
+Demo Şirkət – Ezamiyyət Qaydaları (nümunə sənəd)
+
+1. Ezamiyyət əmri
+İşçinin ezamiyyətə göndərilməsi rəhbərin əmri ilə rəsmiləşdirilir. Əmrdə təyinat yeri,
+müddət və məqsəd göstərilir.
+
+2. Xərclər
+Gündəlik yemək xərci, yaşayış və nəqliyyat xərcləri şirkət tərəfindən ödənilir.
+Yaşayış xərcləri üçün gündəlik limit 80 manatdır.
+
+3. Hesabat
+Ezamiyyətdən qayıtdıqdan sonra 5 iş günü ərzində xərc sənədləri ilə birlikdə hesabat təqdim edilməlidir.
+
+Bu sənəd tamamilə uydurmadır və yalnız demo məqsədi daşıyır.

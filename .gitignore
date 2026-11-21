@@ -223,3 +223,11 @@ dmypy.json
 backend/documents/
 
 backend/example_docs/
+# --- Local data (never commit) ---
+*.db
+*.sqlite
+*.sqlite3
+documents/
+uploads/
+chroma_db/
+flask_session/
