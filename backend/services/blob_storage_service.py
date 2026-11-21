@@ -1,39 +1,43 @@
 # services/blob_storage_service.py
 """Vercel Blob Storage Service - Persistent document storage on Vercel"""
-import os
-import json
-import zipfile
+import logging
+
+logger = logging.getLogger(__name__)
 import io as _io
-from typing import Optional, Tuple, List
-import requests
+import os
+import zipfile
 from io import BytesIO
+from typing import List, Optional, Tuple
+
+import requests
+
 
 class BlobStorageService:
     """Service to handle file uploads to Vercel Blob Storage"""
-    
+
     def __init__(self, config):
         self.config = config
         # Check multiple possible environment variable names for Vercel Blob token
         self.blob_token = (
-            os.getenv('BLOB_READ_WRITE_TOKEN') or 
-            os.getenv('VERCEL_BLOB_TOKEN') or 
+            os.getenv('BLOB_READ_WRITE_TOKEN') or
+            os.getenv('VERCEL_BLOB_TOKEN') or
             os.getenv('VERCEL_BLOB_STORE_TOKEN') or
             ''
         )
         self.blob_enabled = self.blob_token != ''
-        
+
         if self.blob_enabled:
-            print(f"✅ Vercel Blob Storage ENABLED (token found: {self.blob_token[:30]}...)")
+            logger.info(f"✅ Vercel Blob Storage ENABLED (token found: {self.blob_token[:30]}...)")
             is_vercel = os.getenv('VERCEL', '') == '1'
             if is_vercel:
-                print("   Running on Vercel - using Blob Storage for persistence")
+                logger.info("   Running on Vercel - using Blob Storage for persistence")
             else:
-                print("   Local development - Blob token found, will use Blob if needed")
+                logger.info("   Local development - Blob token found, will use Blob if needed")
         else:
-            print("⚠️ Vercel Blob Storage DISABLED")
-            print("   Looking for: BLOB_READ_WRITE_TOKEN, VERCEL_BLOB_TOKEN, or VERCEL_BLOB_STORE_TOKEN")
-            print("   To enable: Set environment variable in Vercel dashboard")
-    
+            logger.warning("⚠️ Vercel Blob Storage DISABLED")
+            logger.info("   Looking for: BLOB_READ_WRITE_TOKEN, VERCEL_BLOB_TOKEN, or VERCEL_BLOB_STORE_TOKEN")
+            logger.info("   To enable: Set environment variable in Vercel dashboard")
+
     # ------------------------------------------------------------------ #
     #  Core upload / download helpers                                      #
     # ------------------------------------------------------------------ #
@@ -56,13 +60,13 @@ class BlobStorageService:
             data=data,
             timeout=60,
         )
-        print(f"📊 Blob PUT status: {response.status_code}")
-        print(f"📋 Blob PUT raw response: {response.text[:500]}")
+        logger.info(f"📊 Blob PUT status: {response.status_code}")
+        logger.info(f"📋 Blob PUT raw response: {response.text[:500]}")
         if response.status_code in (200, 201):
             try:
                 resp_data = response.json()
             except Exception:
-                print(f"⚠️ Blob PUT: could not parse JSON response")
+                logger.warning("⚠️ Blob PUT: could not parse JSON response")
                 return None
             # Safely extract URL from any field Vercel might use
             url = resp_data.get('url') or ''
@@ -73,9 +77,9 @@ class BlobStorageService:
                 url = resp_data.get('pathname') or ''
             if url:
                 return url
-            print(f"⚠️ Blob PUT succeeded but no URL in response: {resp_data}")
+            logger.warning(f"⚠️ Blob PUT succeeded but no URL in response: {resp_data}")
             return None
-        print(f"⚠️ Blob PUT failed ({response.status_code}): {response.text[:200]}")
+        logger.error(f"⚠️ Blob PUT failed ({response.status_code}): {response.text[:200]}")
         return None
 
     def _list_blobs(self, prefix: str) -> List[dict]:
@@ -90,7 +94,7 @@ class BlobStorageService:
             if resp.status_code == 200:
                 return resp.json().get('blobs', [])
         except Exception as e:
-            print(f"⚠️ Blob list error: {e}")
+            logger.error(f"⚠️ Blob list error: {e}")
         return []
 
     def _delete_by_prefix(self, prefix: str) -> None:
@@ -109,7 +113,7 @@ class BlobStorageService:
                     timeout=15,
                 )
             except Exception as e:
-                print(f"⚠️ Blob delete error: {e}")
+                logger.error(f"⚠️ Blob delete error: {e}")
 
     # ------------------------------------------------------------------ #
     #  Document file upload / delete / download                           #
@@ -122,22 +126,21 @@ class BlobStorageService:
         """
         if not self.blob_enabled:
             return False, "Blob storage not configured - BLOB_READ_WRITE_TOKEN missing"
-        
+
         try:
             file_obj.seek(0)
             file_content = file_obj.read()
-            print(f"📤 Uploading {filename} ({len(file_content)} bytes) to Vercel Blob...")
+            logger.info(f"📤 Uploading {filename} ({len(file_content)} bytes) to Vercel Blob...")
 
             url = self._put(f'documents/{filename}', file_content, add_random_suffix=True)
             if url:
-                print(f"✅ Upload successful: {url[:80]}...")
+                logger.info(f"✅ Upload successful: {url[:80]}...")
                 return True, url
             return False, "Upload failed: no URL returned"
 
         except Exception as e:
-            print(f"❌ Blob service error: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"❌ Blob service error: {e}")
+            logger.exception("Unhandled error")
             return False, str(e)
 
     def delete_file(self, blob_url: str) -> bool:
@@ -156,12 +159,12 @@ class BlobStorageService:
             )
             success = response.status_code in (200, 204)
             if success:
-                print("✅ File deleted from Blob Storage")
+                logger.info("✅ File deleted from Blob Storage")
             else:
-                print(f"⚠️ Delete response: {response.status_code}")
+                logger.warning(f"⚠️ Delete response: {response.status_code}")
             return success
         except Exception as e:
-            print(f"⚠️ Blob delete error: {e}")
+            logger.error(f"⚠️ Blob delete error: {e}")
             return False
 
     def download_file(self, blob_url: str) -> Optional[bytes]:
@@ -169,16 +172,16 @@ class BlobStorageService:
         if not blob_url:
             return None
         try:
-            print(f"📥 Downloading from Blob: {blob_url[:60]}...")
+            logger.info(f"📥 Downloading from Blob: {blob_url[:60]}...")
             dl_headers = {'Authorization': f'Bearer {self.blob_token}'} if self.blob_token else {}
             response = requests.get(blob_url, headers=dl_headers, timeout=30)
             if response.status_code == 200:
-                print(f"✅ Downloaded {len(response.content)} bytes")
+                logger.info(f"✅ Downloaded {len(response.content)} bytes")
                 return response.content
-            print(f"⚠️ Download failed: {response.status_code}")
+            logger.error(f"⚠️ Download failed: {response.status_code}")
             return None
         except Exception as e:
-            print(f"⚠️ Blob download error: {e}")
+            logger.error(f"⚠️ Blob download error: {e}")
             return None
 
     def get_file_stream(self, blob_url: str):
@@ -192,7 +195,7 @@ class BlobStorageService:
                 return BytesIO(response.content)
             return None
         except Exception as e:
-            print(f"Blob stream error: {e}")
+            logger.error(f"Blob stream error: {e}")
             return None
 
     # ------------------------------------------------------------------ #
@@ -211,7 +214,7 @@ class BlobStorageService:
         if not self.blob_enabled:
             return False
         if not os.path.exists(db_path):
-            print(f"⚠️ DB sync skipped – file not found: {db_path}")
+            logger.warning(f"⚠️ DB sync skipped – file not found: {db_path}")
             return False
         try:
             with open(db_path, 'rb') as f:
@@ -224,7 +227,7 @@ class BlobStorageService:
             # 2. Upload new version first – always a valid copy exists at this point
             url = self._put(self._DB_BLOB_PATH, data, add_random_suffix=False)
             if not url:
-                print("⚠️ DB sync: PUT failed, keeping old backup intact")
+                logger.error("⚠️ DB sync: PUT failed, keeping old backup intact")
                 return False
 
             # 3. Delete old versions only AFTER new one is confirmed
@@ -242,12 +245,12 @@ class BlobStorageService:
                             timeout=10,
                         )
                     except Exception as _e:
-                        print(f"⚠️ DB cleanup error (non-fatal): {_e}")
+                        logger.error(f"⚠️ DB cleanup error (non-fatal): {_e}")
 
-            print(f"✅ DB synced to Blob ({len(data)} bytes)")
+            logger.info(f"✅ DB synced to Blob ({len(data)} bytes)")
             return True
         except Exception as e:
-            print(f"⚠️ DB sync to blob error: {e}")
+            logger.error(f"⚠️ DB sync to blob error: {e}")
             return False
 
     def sync_db_from_blob(self, db_path: str) -> bool:
@@ -257,7 +260,7 @@ class BlobStorageService:
         try:
             blobs = self._list_blobs(self._DB_BLOB_PATH)
             if not blobs:
-                print("📋 No remote DB backup found – starting fresh")
+                logger.info("📋 No remote DB backup found – starting fresh")
                 return False
 
             # Pick the most recently uploaded blob in case multiple exist
@@ -271,16 +274,16 @@ class BlobStorageService:
                 timeout=30,
             )
             if response.status_code != 200:
-                print(f"⚠️ DB download failed: {response.status_code} – {response.text[:200]}")
+                logger.error(f"⚠️ DB download failed: {response.status_code} – {response.text[:200]}")
                 return False
 
             os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
             with open(db_path, 'wb') as f:
                 f.write(response.content)
-            print(f"✅ DB restored from Blob ({len(response.content)} bytes)")
+            logger.info(f"✅ DB restored from Blob ({len(response.content)} bytes)")
             return True
         except Exception as e:
-            print(f"⚠️ DB sync from blob error: {e}")
+            logger.error(f"⚠️ DB sync from blob error: {e}")
             return False
 
     # ------------------------------------------------------------------ #
@@ -294,7 +297,7 @@ class BlobStorageService:
         if not self.blob_enabled:
             return False
         if not os.path.exists(local_path):
-            print(f"⚠️ sync_file_to_blob skipped – not found: {local_path}")
+            logger.warning(f"⚠️ sync_file_to_blob skipped – not found: {local_path}")
             return False
         try:
             old_blobs = self._list_blobs(blob_key)
@@ -320,12 +323,12 @@ class BlobStorageService:
                             timeout=10,
                         )
                     except Exception as _e:
-                        print(f"⚠️ File cleanup error (non-fatal): {_e}")
+                        logger.error(f"⚠️ File cleanup error (non-fatal): {_e}")
 
-            print(f"✅ {os.path.basename(local_path)} synced to Blob ({len(data)} bytes)")
+            logger.info(f"✅ {os.path.basename(local_path)} synced to Blob ({len(data)} bytes)")
             return True
         except Exception as e:
-            print(f"⚠️ sync_file_to_blob error: {e}")
+            logger.error(f"⚠️ sync_file_to_blob error: {e}")
             return False
 
     def sync_file_from_blob(self, blob_key: str, local_path: str) -> bool:
@@ -335,21 +338,21 @@ class BlobStorageService:
         try:
             blobs = self._list_blobs(blob_key)
             if not blobs:
-                print(f"📋 No remote backup found for {blob_key}")
+                logger.info(f"📋 No remote backup found for {blob_key}")
                 return False
             blob_url = blobs[0]['url']
             headers = {'Authorization': f'Bearer {self.blob_token}'}
             response = requests.get(blob_url, headers=headers, timeout=30)
             if response.status_code != 200:
-                print(f"⚠️ sync_file_from_blob download failed: {response.status_code}")
+                logger.error(f"⚠️ sync_file_from_blob download failed: {response.status_code}")
                 return False
             os.makedirs(os.path.dirname(os.path.abspath(local_path)), exist_ok=True)
             with open(local_path, 'wb') as f:
                 f.write(response.content)
-            print(f"🔄 {os.path.basename(local_path)} restored from Blob ({len(response.content)} bytes)")
+            logger.info(f"🔄 {os.path.basename(local_path)} restored from Blob ({len(response.content)} bytes)")
             return True
         except Exception as e:
-            print(f"⚠️ sync_file_from_blob error: {e}")
+            logger.error(f"⚠️ sync_file_from_blob error: {e}")
             return False
 
     # ------------------------------------------------------------------ #
@@ -364,7 +367,7 @@ class BlobStorageService:
         if not self.blob_enabled:
             return False
         if not os.path.exists(chroma_dir):
-            print(f"⚠️ ChromaDB sync skipped – dir not found: {chroma_dir}")
+            logger.warning(f"⚠️ ChromaDB sync skipped – dir not found: {chroma_dir}")
             return False
         try:
             blob_path = self._chroma_blob_path(doc_id)
@@ -382,11 +385,11 @@ class BlobStorageService:
             zip_data = zip_buffer.getvalue()
             url = self._put(blob_path, zip_data, add_random_suffix=False)
             if url:
-                print(f"🔄 ChromaDB doc_{doc_id} synced to Blob ({len(zip_data)} bytes)")
+                logger.info(f"🔄 ChromaDB doc_{doc_id} synced to Blob ({len(zip_data)} bytes)")
                 return True
             return False
         except Exception as e:
-            print(f"⚠️ ChromaDB sync to blob error: {e}")
+            logger.error(f"⚠️ ChromaDB sync to blob error: {e}")
             return False
 
     def sync_chroma_from_blob(self, doc_id: int, chroma_dir: str) -> bool:
@@ -397,12 +400,12 @@ class BlobStorageService:
             blob_path = self._chroma_blob_path(doc_id)
             blobs = self._list_blobs(blob_path)
             if not blobs:
-                print(f"📋 No remote ChromaDB backup for doc_{doc_id}")
+                logger.info(f"📋 No remote ChromaDB backup for doc_{doc_id}")
                 return False
 
             response = requests.get(blobs[0]['url'], timeout=60)
             if response.status_code != 200:
-                print(f"⚠️ ChromaDB download failed: {response.status_code}")
+                logger.error(f"⚠️ ChromaDB download failed: {response.status_code}")
                 return False
 
             parent_dir = os.path.dirname(chroma_dir)
@@ -410,8 +413,8 @@ class BlobStorageService:
             with zipfile.ZipFile(_io.BytesIO(response.content), 'r') as zf:
                 zf.extractall(parent_dir)
 
-            print(f"🔄 ChromaDB doc_{doc_id} restored from Blob")
+            logger.info(f"🔄 ChromaDB doc_{doc_id} restored from Blob")
             return True
         except Exception as e:
-            print(f"⚠️ ChromaDB sync from blob error: {e}")
+            logger.error(f"⚠️ ChromaDB sync from blob error: {e}")
             return False

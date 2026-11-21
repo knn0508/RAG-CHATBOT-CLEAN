@@ -1,17 +1,24 @@
 # utils/database.py
 """Database management utilities"""
+import logging
+import os
+import secrets
 import sqlite3
-from typing import Optional, Dict, List, Any
 from contextlib import contextmanager
+from typing import Any, Dict, List, Optional
+
 from werkzeug.security import generate_password_hash
+
+logger = logging.getLogger(__name__)
+
 
 class DatabaseManager:
     """Database management class with connection pooling"""
-    
+
     def __init__(self, db_path: str):
         self.db_path = db_path
         self.init_database()
-    
+
     @contextmanager
     def get_connection(self):
         """Context manager for database connections"""
@@ -21,12 +28,12 @@ class DatabaseManager:
             yield conn
         finally:
             conn.close()
-    
+
     def init_database(self) -> None:
         """Initialize database tables and default data"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            
+
             # Create tables
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS users (
@@ -40,7 +47,7 @@ class DatabaseManager:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            
+
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS documents (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,7 +66,7 @@ class DatabaseManager:
                     FOREIGN KEY (uploaded_by) REFERENCES users (id)
                 )
             ''')
-            
+
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS conversations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,72 +80,74 @@ class DatabaseManager:
                     FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE
                 )
             ''')
-            
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS refresh_tokens (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    token TEXT UNIQUE NOT NULL,
-                    expires_at TIMESTAMP NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users (id)
-                )
-            ''')
-            
+
             # Add missing columns to existing tables (migrations)
             # Check if is_blob_storage column exists in documents table
             cursor.execute("PRAGMA table_info(documents)")
             columns = [column[1] for column in cursor.fetchall()]
-            
+
             if 'is_blob_storage' not in columns:
-                print("📦 Migrating documents table: adding is_blob_storage column")
+                logger.info("📦 Migrating documents table: adding is_blob_storage column")
                 cursor.execute('''ALTER TABLE documents ADD COLUMN is_blob_storage BOOLEAN DEFAULT FALSE''')
-            
+
             # Check if document_type column exists
             if 'document_type' not in columns:
-                print("📦 Migrating documents table: adding document_type column")
+                logger.info("📦 Migrating documents table: adding document_type column")
                 cursor.execute('''ALTER TABLE documents ADD COLUMN document_type TEXT DEFAULT 'other''''')
-            
+
             # Check if is_template column exists
             if 'is_template' not in columns:
-                print("📦 Migrating documents table: adding is_template column")
+                logger.info("📦 Migrating documents table: adding is_template column")
                 cursor.execute('''ALTER TABLE documents ADD COLUMN is_template BOOLEAN DEFAULT FALSE''')
-            
+
             # Check if keywords column exists
             if 'keywords' not in columns:
-                print("📦 Migrating documents table: adding keywords column")
+                logger.debug("📦 Migrating documents table: adding keywords column")
                 cursor.execute('''ALTER TABLE documents ADD COLUMN keywords TEXT''')
-            
+
             # Create indexes
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_documents_uploaded_by ON documents(uploaded_by)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token ON refresh_tokens(token)')
-            
-            # Create default admin if not exists
-            cursor.execute("SELECT id FROM users WHERE username = ?", ('admin',))
+
+            # Bootstrap an admin account if none exists (no hardcoded password)
+            cursor.execute("SELECT id FROM users WHERE role = 'admin' LIMIT 1")
             if not cursor.fetchone():
-                admin_hash = generate_password_hash('admin123')
+                admin_user = os.getenv('ADMIN_USERNAME', 'admin')
+                admin_password = os.getenv('ADMIN_PASSWORD')
+                generated = not admin_password
+                if generated:
+                    admin_password = secrets.token_urlsafe(12)
                 cursor.execute(
                     "INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)",
-                    ('admin', admin_hash, 'admin', 'admin@example.com')
+                    (admin_user, generate_password_hash(admin_password), 'admin', None)
                 )
-            
+                if generated:
+                    # Printed exactly once, on purpose: this is the only time the password is known.
+                    print(
+                        f"\n*** Admin account created. username={admin_user} "
+                        f"password={admin_password}\n"
+                        "*** Store it now; it will not be shown again. "
+                        "Set ADMIN_PASSWORD in .env to choose your own.\n"
+                    )
+                else:
+                    logger.info("Admin account '%s' created from ADMIN_USERNAME/ADMIN_PASSWORD", admin_user)
+
             conn.commit()
-    
-    def execute_query(self, query: str, params: tuple = (), 
+
+    def execute_query(self, query: str, params: tuple = (),
                      fetch_one: bool = False) -> Any:
         """Execute a database query"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(query, params)
-            
+
             if query.strip().upper().startswith('SELECT'):
                 return cursor.fetchone() if fetch_one else cursor.fetchall()
             else:
                 conn.commit()
                 return cursor.lastrowid
-    
+
     def get_user_by_username(self, username: str) -> Optional[Dict]:
         """Get user by username"""
         result = self.execute_query(
@@ -147,7 +156,7 @@ class DatabaseManager:
             fetch_one=True
         )
         return dict(result) if result else None
-    
+
     def get_user_by_id(self, user_id: int) -> Optional[Dict]:
         """Get user by ID"""
         result = self.execute_query(
@@ -156,15 +165,15 @@ class DatabaseManager:
             fetch_one=True
         )
         return dict(result) if result else None
-    
-    def create_user(self, username: str, password_hash: str, 
+
+    def create_user(self, username: str, password_hash: str,
                    email: Optional[str] = None, role: str = 'user') -> int:
         """Create a new user"""
         return self.execute_query(
             "INSERT INTO users (username, password_hash, email, role) VALUES (?, ?, ?, ?)",
             (username, password_hash, email, role)
         )
-    
+
     def get_documents(self, user_id: Optional[int] = None) -> List[Dict]:
         """Get all documents or documents by user"""
         if user_id:
@@ -184,11 +193,11 @@ class DatabaseManager:
                 ORDER BY d.created_at DESC
             '''
             params = ()
-        
+
         results = self.execute_query(query, params)
         return [dict(row) for row in results]
-    
-    def create_document(self, filename: str, original_name: str, 
+
+    def create_document(self, filename: str, original_name: str,
                        file_path: str, file_size: int, file_type: str,
                        uploaded_by: int, is_blob_storage: bool = False) -> int:
         """Create a document record"""
@@ -198,14 +207,14 @@ class DatabaseManager:
                VALUES (?, ?, ?, ?, ?, ?, ?)''',
             (filename, original_name, file_path, file_size, file_type, uploaded_by, is_blob_storage)
         )
-    
+
     def update_document_processed(self, doc_id: int, processed: bool = True) -> None:
         """Update document processed status"""
         self.execute_query(
             "UPDATE documents SET is_processed = ? WHERE id = ?",
             (processed, doc_id)
         )
-    
+
     def delete_document(self, doc_id: int) -> Optional[Dict]:
         """Delete a document and return its info"""
         doc = self.execute_query(
@@ -213,12 +222,12 @@ class DatabaseManager:
             (doc_id,),
             fetch_one=True
         )
-        
+
         if doc:
             self.execute_query("DELETE FROM documents WHERE id = ?", (doc_id,))
             return dict(doc)
         return None
-    
+
     def get_conversations(self, user_id: int) -> List[Dict]:
         """Get user conversations"""
         results = self.execute_query(
@@ -230,7 +239,7 @@ class DatabaseManager:
             (user_id,)
         )
         return [dict(row) for row in results]
-    
+
     def create_conversation(self, user_id: int, document_id: Optional[int],
                           title: str, messages: str) -> int:
         """Create a new conversation"""
@@ -239,7 +248,7 @@ class DatabaseManager:
                VALUES (?, ?, ?, ?)''',
             (user_id, document_id, title, messages)
         )
-    
+
     def update_conversation(self, conv_id: int, messages: str) -> None:
         """Update conversation messages"""
         self.execute_query(
@@ -248,7 +257,7 @@ class DatabaseManager:
                WHERE id = ?''',
             (messages, conv_id)
         )
-    
+
     def get_conversation(self, conv_id: int, user_id: int) -> Optional[Dict]:
         """Get a specific conversation"""
         result = self.execute_query(
@@ -257,7 +266,7 @@ class DatabaseManager:
             fetch_one=True
         )
         return dict(result) if result else None
-    
+
     def delete_conversation(self, conv_id: int, user_id: int) -> bool:
         """Delete a conversation"""
         self.execute_query(
@@ -265,32 +274,3 @@ class DatabaseManager:
             (conv_id, user_id)
         )
         return True
-    
-    def save_refresh_token(self, user_id: int, token: str, expires_at: str) -> None:
-        """Save refresh token"""
-        self.execute_query(
-            "INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)",
-            (user_id, token, expires_at)
-        )
-    
-    def get_refresh_token(self, token: str) -> Optional[Dict]:
-        """Get refresh token data"""
-        result = self.execute_query(
-            "SELECT * FROM refresh_tokens WHERE token = ?",
-            (token,),
-            fetch_one=True
-        )
-        return dict(result) if result else None
-    
-    def delete_refresh_token(self, token: str) -> None:
-        """Delete refresh token"""
-        self.execute_query(
-            "DELETE FROM refresh_tokens WHERE token = ?",
-            (token,)
-        )
-    
-    def cleanup_expired_tokens(self) -> None:
-        """Clean up expired refresh tokens"""
-        self.execute_query(
-            "DELETE FROM refresh_tokens WHERE expires_at < CURRENT_TIMESTAMP"
-        )

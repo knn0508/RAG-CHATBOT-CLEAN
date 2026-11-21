@@ -1,0 +1,19 @@
+line-length = 120
+target-version = "py311"
+extend-exclude = ["static"]
+
+[lint]
+select = ["E", "F", "W", "I", "B", "T20"]
+ignore = [
+    "E402",  # logger set up before conditional imports
+    "E501",  # long lines (Azerbaijani strings, SQL)
+    "E722",  # bare except in legacy service code, tracked in docs/limitations
+    "B904",
+    "W291", "W293",  # trailing whitespace inside legacy SQL strings
+]
+
+[lint.per-file-ignores]
+"utils/database.py" = ["T201"]  # one-time admin password print is intentional
+"scripts/*" = ["T201"]
+"wsgi.py" = ["T201"]
+"tests/*" = ["B011"]
